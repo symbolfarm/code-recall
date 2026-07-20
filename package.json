@@ -1,0 +1,54 @@
+{
+  "name": "code-recall",
+  "displayName": "Code Recall",
+  "description": "Learn a codebase through a deterministic AST graph and active recall.",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": ["Education", "Visualization"],
+  "activationEvents": ["onView:codeRecall.explorer"],
+  "main": "./dist/src/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "codeRecall.refresh", "title": "Code Recall: Re-index Workspace" },
+      { "command": "codeRecall.showGraph", "title": "Code Recall: Show Graph" },
+      { "command": "codeRecall.recall", "title": "Code Recall: Recall Selected Component" },
+      { "command": "codeRecall.reviewDue", "title": "Code Recall: Review Due Component" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "codeRecall", "title": "Code Recall", "icon": "media/icon.svg" }
+      ]
+    },
+    "views": {
+      "codeRecall": [
+        { "id": "codeRecall.explorer", "name": "Code Atlas" }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        { "command": "codeRecall.showGraph", "when": "view == codeRecall.explorer", "group": "navigation@1" },
+        { "command": "codeRecall.refresh", "when": "view == codeRecall.explorer", "group": "navigation@2" },
+        { "command": "codeRecall.reviewDue", "when": "view == codeRecall.explorer", "group": "navigation@3" }
+      ],
+      "view/item/context": [
+        { "command": "codeRecall.recall", "when": "view == codeRecall.explorer", "group": "inline" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "test": "npm run compile && node --test dist/test/*.test.js",
+    "check": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.8.0"
+  }
+}
+

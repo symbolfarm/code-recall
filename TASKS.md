@@ -5,5 +5,4 @@ Read this file at the start of each work session, then consult
 
 ## Current focus
 
-Build the first local-first VS Code prototype for deterministic codebase recall.
-
+The first prototype is complete. See `.tasks/LOG.jsonl` for its audit record.

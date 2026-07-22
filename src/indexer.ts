@@ -2,16 +2,23 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import ts from "typescript";
 import { CodeEdge, CodeGraph, CodeNode, NodeKind } from "./model";
+import { IndexContext, indexPythonFiles } from "./pythonIndexer";
 
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]);
-const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "build", "coverage", ".next"]);
+const TS_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]);
+const PY_EXTENSIONS = new Set([".py"]);
+const SOURCE_EXTENSIONS = new Set([...TS_EXTENSIONS, ...PY_EXTENSIONS]);
+const IGNORED_DIRECTORIES = new Set([
+  ".git", "node_modules", "dist", "build", "coverage", ".next",
+  ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".tox",
+]);
 
 export function collectSourceFiles(root: string): string[] {
   const result: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && !IGNORED_DIRECTORIES.has(entry.name)) visit(path.join(directory, entry.name));
-      else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)) && !entry.name.endsWith(".d.ts")) {
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRECTORIES.has(entry.name) && !entry.name.endsWith(".egg-info")) visit(path.join(directory, entry.name));
+      } else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)) && !entry.name.endsWith(".d.ts")) {
         result.push(path.join(directory, entry.name));
       }
     }
@@ -22,26 +29,41 @@ export function collectSourceFiles(root: string): string[] {
 
 export function buildGraph(root: string, files = collectSourceFiles(root)): CodeGraph {
   const workspaceId = "workspace:.";
-  const nodes: CodeNode[] = [{ id: workspaceId, kind: "workspace", name: path.basename(root), qualifiedName: path.basename(root), childIds: [] }];
+  const workspaceNode: CodeNode = { id: workspaceId, kind: "workspace", name: path.basename(root), qualifiedName: path.basename(root), childIds: [] };
+  const nodes: CodeNode[] = [workspaceNode];
   const edges: CodeEdge[] = [];
   const fileIds = new Map<string, string>();
+  const byId = new Map<string, CodeNode>([[workspaceId, workspaceNode]]);
   const normalizedFiles = files.map((file) => path.resolve(file));
 
   for (const absolute of normalizedFiles) {
     const relative = normalize(path.relative(root, absolute));
     const id = `file:${relative}`;
     fileIds.set(absolute, id);
-    nodes.push({ id, kind: "file", name: relative, qualifiedName: relative, location: { file: absolute, start: 0, end: fs.statSync(absolute).size, line: 1 }, parentId: workspaceId, childIds: [] });
-    nodes[0].childIds.push(id);
+    const fileNode: CodeNode = { id, kind: "file", name: relative, qualifiedName: relative, location: { file: absolute, start: 0, end: fs.statSync(absolute).size, line: 1 }, parentId: workspaceId, childIds: [] };
+    nodes.push(fileNode);
+    byId.set(id, fileNode);
+    workspaceNode.childIds.push(id);
     edges.push({ from: workspaceId, to: id, kind: "contains" });
   }
 
-  const program = ts.createProgram(normalizedFiles, { allowJs: true, jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.ES2022, moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext });
+  const tsFiles = normalizedFiles.filter((file) => TS_EXTENSIONS.has(path.extname(file)));
+  const pyFiles = normalizedFiles.filter((file) => PY_EXTENSIONS.has(path.extname(file)));
+
+  indexTypeScriptFiles(tsFiles, fileIds, byId, nodes, edges);
+  indexPythonFiles(pyFiles, { root, fileIds, byId, nodes, edges } satisfies IndexContext);
+
+  return { rootId: workspaceId, nodes, edges, indexedAt: new Date().toISOString() };
+}
+
+function indexTypeScriptFiles(tsFiles: string[], fileIds: Map<string, string>, byId: Map<string, CodeNode>, nodes: CodeNode[], edges: CodeEdge[]): void {
+  if (tsFiles.length === 0) return;
+  const program = ts.createProgram(tsFiles, { allowJs: true, jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.ES2022, moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext });
   for (const source of program.getSourceFiles()) {
     const absolute = path.resolve(source.fileName);
     const fileId = fileIds.get(absolute);
     if (!fileId) continue;
-    const fileNode = nodes.find((node) => node.id === fileId)!;
+    const fileNode = byId.get(fileId)!;
 
     for (const statement of source.statements) {
       if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
@@ -52,8 +74,6 @@ export function buildGraph(root: string, files = collectSourceFiles(root)): Code
       if (declaration) addDeclaration(declaration.node, declaration.kind, fileNode, source, nodes, edges);
     }
   }
-
-  return { rootId: workspaceId, nodes, edges, indexedAt: new Date().toISOString() };
 }
 
 function addDeclaration(node: ts.NamedDeclaration, kind: NodeKind, parent: CodeNode, source: ts.SourceFile, nodes: CodeNode[], edges: CodeEdge[]): void {
@@ -101,7 +121,7 @@ function signatureOf(node: ts.NamedDeclaration, source: ts.SourceFile): string {
 function resolveImport(fromFile: string, specifier: string, fileIds: Map<string, string>): string | undefined {
   if (!specifier.startsWith(".")) return undefined;
   const base = path.resolve(path.dirname(fromFile), specifier);
-  for (const candidate of [base, ...[...SOURCE_EXTENSIONS].map((extension) => base + extension), ...[...SOURCE_EXTENSIONS].map((extension) => path.join(base, `index${extension}`))]) {
+  for (const candidate of [base, ...[...TS_EXTENSIONS].map((extension) => base + extension), ...[...TS_EXTENSIONS].map((extension) => path.join(base, `index${extension}`))]) {
     const id = fileIds.get(candidate);
     if (id) return id;
   }

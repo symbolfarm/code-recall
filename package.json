@@ -16,7 +16,8 @@
       { "command": "codeRecall.refresh", "title": "Code Recall: Re-index Workspace" },
       { "command": "codeRecall.showGraph", "title": "Code Recall: Show Graph" },
       { "command": "codeRecall.recall", "title": "Code Recall: Recall Selected Component" },
-      { "command": "codeRecall.reviewDue", "title": "Code Recall: Review Due Component" }
+      { "command": "codeRecall.reviewDue", "title": "Code Recall: Review Due Component" },
+      { "command": "codeRecall.reviewCodebase", "title": "Code Recall: Review Codebase (Guided Pass)" }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -30,6 +31,7 @@
     },
     "menus": {
       "view/title": [
+        { "command": "codeRecall.reviewCodebase", "when": "view == codeRecall.explorer", "group": "navigation@0" },
         { "command": "codeRecall.showGraph", "when": "view == codeRecall.explorer", "group": "navigation@1" },
         { "command": "codeRecall.refresh", "when": "view == codeRecall.explorer", "group": "navigation@2" },
         { "command": "codeRecall.reviewDue", "when": "view == codeRecall.explorer", "group": "navigation@3" }

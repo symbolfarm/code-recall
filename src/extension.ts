@@ -3,8 +3,8 @@ import * as vscode from "vscode";
 import { AtlasProvider } from "./atlasProvider";
 import { showGraph } from "./graphView";
 import { buildGraph } from "./indexer";
-import { CodeNode, ReviewRating, ReviewState } from "./model";
-import { dueNodeIds, scheduleReview } from "./scheduler";
+import { CodeGraph, CodeNode, ReviewRating, ReviewState } from "./model";
+import { dueNodeIds, reviewOrder, scheduleReview } from "./scheduler";
 
 const REVIEW_KEY = "codeRecall.reviews";
 
@@ -43,9 +43,42 @@ export function activate(context: vscode.ExtensionContext): void {
         ?? graph.nodes.find((candidate) => candidate.kind !== "workspace");
       if (node) await runRecall(node, context);
     }),
+    vscode.commands.registerCommand("codeRecall.reviewCodebase", async () => {
+      if (!provider.getGraph()) await refresh();
+      const graph = provider.getGraph();
+      if (graph) await runGuidedPass(graph, context);
+    }),
   );
 
   void refresh();
+}
+
+const SCOPE_KINDS: Record<string, ReadonlySet<CodeNode["kind"]> | null> = {
+  "Modules only": new Set(["file"]),
+  "Modules + declarations": new Set(["file", "class", "interface", "function", "type", "enum"]),
+  "Everything (incl. methods)": null,
+};
+
+async function runGuidedPass(graph: CodeGraph, context: vscode.ExtensionContext): Promise<void> {
+  const scope = await vscode.window.showQuickPick(Object.keys(SCOPE_KINDS), {
+    title: "Guided review — how deep?",
+    placeHolder: "Most-depended-on modules come first. Press Escape mid-pass to stop; the deck remembers.",
+  });
+  if (!scope) return;
+  const kinds = SCOPE_KINDS[scope];
+  const order = reviewOrder(graph).filter((node) => !kinds || kinds.has(node.kind));
+  if (order.length === 0) {
+    void vscode.window.showInformationMessage("Code Recall: nothing to review — the atlas is empty.");
+    return;
+  }
+  for (let index = 0; index < order.length; index++) {
+    const keepGoing = await runRecall(order[index], context, { index: index + 1, total: order.length });
+    if (!keepGoing) {
+      void vscode.window.showInformationMessage(`Code Recall: paused at ${index + 1}/${order.length}. Resume from the deck with Review Due Component.`);
+      return;
+    }
+  }
+  void vscode.window.showInformationMessage(`Code Recall: reviewed ${order.length} component(s). Spaced deck seeded.`);
 }
 
 async function openNode(node: CodeNode): Promise<void> {
@@ -57,15 +90,17 @@ async function openNode(node: CodeNode): Promise<void> {
   editor.revealRange(new vscode.Range(position, position));
 }
 
-async function runRecall(node: CodeNode, context: vscode.ExtensionContext): Promise<void> {
-  const prompt = recallPrompt(node);
+/** Run one recall prompt. Returns false only when the learner escapes the
+ *  answer box, which a guided pass treats as "stop here". */
+async function runRecall(node: CodeNode, context: vscode.ExtensionContext, progress?: { index: number; total: number }): Promise<boolean> {
+  const tag = progress ? `(${progress.index}/${progress.total}) ` : "";
   const response = await vscode.window.showInputBox({
-    title: `Recall: ${node.kind}`,
-    prompt,
+    title: `${tag}Recall: ${node.kind} — ${node.name}`,
+    prompt: recallPrompt(node),
     placeHolder: "Describe it from memory. Your answer remains local and is not automatically graded.",
     ignoreFocusOut: true,
   });
-  if (response === undefined) return;
+  if (response === undefined) return false;
 
   const facts = deterministicFacts(node);
   const rating = await vscode.window.showQuickPick<RatingItem>([
@@ -73,14 +108,15 @@ async function runRecall(node: CodeNode, context: vscode.ExtensionContext): Prom
     { label: "Hard", description: "I recalled it with difficulty", rating: "hard" },
     { label: "Good", description: "I recalled the important facts", rating: "good" },
     { label: "Easy", description: "This was immediate", rating: "easy" },
-  ], { title: `Reveal · Your answer: ${response || "(blank)"}`, placeHolder: facts });
-  if (!rating) return;
+  ], { title: `${tag}Reveal · Your answer: ${response || "(blank)"}`, placeHolder: facts });
+  if (!rating) return true;
 
   const states = context.workspaceState.get<ReviewState[]>(REVIEW_KEY, []);
   const previous = states.find((state) => state.nodeId === node.id);
   const next = scheduleReview(node.id, rating.rating, previous);
   await context.workspaceState.update(REVIEW_KEY, [...states.filter((state) => state.nodeId !== node.id), next]);
   void vscode.window.showInformationMessage(`${facts} Next review: ${formatDue(next.dueAt)}`);
+  return true;
 }
 
 function recallPrompt(node: CodeNode): string {

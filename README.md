@@ -1,9 +1,9 @@
 # Code Recall
 
 Code Recall is a local-first VS Code prototype for learning a codebase through
-active recall. It builds a deterministic atlas from TypeScript/JavaScript ASTs;
-it does not use an AI model, embeddings, telemetry, or a remote indexing
-service.
+active recall. It builds a deterministic atlas from TypeScript/JavaScript and
+Python source; the core indexer does not use an AI model, embeddings,
+telemetry, or a remote indexing service.
 
 ## Prototype features
 
@@ -14,6 +14,9 @@ service.
   their position and connections.
 - Component recall prompts followed by deterministic source facts and an
   `Again / Hard / Good / Easy` self-rating.
+- A **guided pass** (`Review Codebase`) that walks components most-depended-on
+  first, seeding the spaced-repetition deck — the on-ramp for reviewing an
+  unfamiliar release before you ship it.
 - Per-workspace review state stored in VS Code's local workspace storage.
 
 Free-text answers are intentionally not graded. The learner compares their
@@ -40,8 +43,12 @@ example `file:src/indexer.ts` and
 
 ## Current limitations
 
-- Only TypeScript and JavaScript syntax is indexed.
-- Declarations inside function bodies and variable-bound arrow functions are
+- TypeScript/JavaScript (via the TypeScript compiler) and Python (via the
+  standard-library `ast` module, shelled out to `python3`) are indexed; other
+  languages are not yet. Python indexing is skipped with a warning if no
+  interpreter is on `PATH`.
+- Only top-level declarations and one level of class methods become nodes.
+  Declarations inside function bodies and variable-bound arrow functions are
   not yet nodes.
 - Imports are links only when a relative specifier resolves directly to an
   indexed source file; path aliases and package edges are omitted.

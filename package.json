@@ -45,7 +45,9 @@
     "compile": "tsc -p .",
     "watch": "tsc -w -p .",
     "test": "npm run compile && node --test dist/test/*.test.js",
-    "check": "tsc -p . --noEmit"
+    "check": "tsc -p . --noEmit",
+    "prepare:agentdesk-security": "node scripts/prepare-agentdesk-security-pass.mjs",
+    "check:agentdesk-security": "node scripts/prepare-agentdesk-security-pass.mjs --check"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -34,6 +34,25 @@ open a TypeScript or JavaScript project and select the Code Recall icon in the
 activity bar. Use the title-bar buttons to re-index, open the graph, or review a
 due component.
 
+## Prepared passes
+
+[`passes/agentdesk-security.md`](passes/agentdesk-security.md) is a pinned,
+source-backed active-recall pass over AgentDesk's sandbox boundary, key
+handling, and SQLite-at-rest. It is deliberately a reading pass rather than a
+Rust atlas: Code Recall does not yet index Rust, and the security review must
+distinguish implemented code from accepted but unfinished design work.
+
+Regenerate it against an AgentDesk checkout, or verify that the committed pass
+still matches its pinned source:
+
+```sh
+npm run prepare:agentdesk-security -- ../agent-desk
+npm run check:agentdesk-security -- ../agent-desk
+```
+
+Generation fails when a selected source range no longer contains its expected
+control markers, forcing changed security-sensitive excerpts to be reviewed.
+
 ## Graph schema
 
 Stable node IDs use repository-relative paths and qualified symbol names, for
